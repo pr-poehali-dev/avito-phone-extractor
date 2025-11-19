@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,40 +17,35 @@ interface ParseResult {
   cost: number;
 }
 
+const PARSE_API_URL = 'https://functions.poehali.dev/aaec67af-c395-457f-b39e-ebdcbb62240c';
+const HISTORY_API_URL = 'https://functions.poehali.dev/1c021a25-7781-4ccb-903b-f167c8dcc2cb';
+
 const Index = () => {
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [currentResult, setCurrentResult] = useState<ParseResult | null>(null);
-  const [history, setHistory] = useState<ParseResult[]>([
-    {
-      id: '1',
-      url: 'https://www.avito.ru/moskva/kvartiry/...',
-      platform: 'avito',
-      phone: '+7 (999) 123-45-67',
-      status: 'success',
-      timestamp: new Date(Date.now() - 3600000),
-      cost: 15
-    },
-    {
-      id: '2',
-      url: 'https://rabota.ru/vacancy/...',
-      platform: 'rabota',
-      phone: '+7 (999) 987-65-43',
-      status: 'success',
-      timestamp: new Date(Date.now() - 7200000),
-      cost: 15
-    },
-    {
-      id: '3',
-      url: 'https://www.avito.ru/...',
-      platform: 'avito',
-      phone: '',
-      status: 'failed',
-      timestamp: new Date(Date.now() - 10800000),
-      cost: 0
-    }
-  ]);
+  const [history, setHistory] = useState<ParseResult[]>([]);
   const [balance, setBalance] = useState(450);
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  const loadHistory = async () => {
+    try {
+      const response = await fetch(HISTORY_API_URL);
+      const data = await response.json();
+      if (data.history) {
+        const formattedHistory = data.history.map((item: any) => ({
+          ...item,
+          timestamp: new Date(item.timestamp)
+        }));
+        setHistory(formattedHistory);
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки истории:', error);
+    }
+  };
 
   const handleParse = async () => {
     if (!url.trim()) {
@@ -66,34 +61,54 @@ const Index = () => {
     setIsLoading(true);
     setCurrentResult(null);
 
-    setTimeout(() => {
-      const platform = url.includes('avito.ru') ? 'avito' : 'rabota';
-      const isSuccess = Math.random() > 0.2;
-      const phone = isSuccess ? `+7 (9${Math.floor(Math.random() * 90 + 10)}) ${Math.floor(Math.random() * 900 + 100)}-${Math.floor(Math.random() * 90 + 10)}-${Math.floor(Math.random() * 90 + 10)}` : '';
-      
-      const result: ParseResult = {
-        id: Date.now().toString(),
-        url,
-        platform,
-        phone,
-        status: isSuccess ? 'success' : 'failed',
-        timestamp: new Date(),
-        cost: isSuccess ? 15 : 0
-      };
+    try {
+      const response = await fetch(PARSE_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ url })
+      });
 
-      setCurrentResult(result);
-      setHistory([result, ...history]);
-      
-      if (isSuccess) {
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        const result: ParseResult = {
+          id: Date.now().toString(),
+          url: data.url,
+          platform: data.platform,
+          phone: data.phone,
+          status: 'success',
+          timestamp: new Date(),
+          cost: 15
+        };
+
+        setCurrentResult(result);
         setBalance(balance - 15);
         toast.success('Номер успешно извлечён');
+        await loadHistory();
       } else {
-        toast.error('Не удалось извлечь номер');
+        const result: ParseResult = {
+          id: Date.now().toString(),
+          url,
+          platform: url.includes('avito.ru') ? 'avito' : 'rabota',
+          phone: '',
+          status: 'failed',
+          timestamp: new Date(),
+          cost: 0
+        };
+
+        setCurrentResult(result);
+        toast.error(data.error || 'Не удалось извлечь номер');
+        await loadHistory();
       }
-      
+    } catch (error) {
+      toast.error('Ошибка соединения с сервером');
+      console.error('Parse error:', error);
+    } finally {
       setIsLoading(false);
       setUrl('');
-    }, 2500);
+    }
   };
 
   const formatDate = (date: Date) => {

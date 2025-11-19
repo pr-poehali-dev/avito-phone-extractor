@@ -1,0 +1,13 @@
+{
+  "tests": [
+    {
+      "name": "Test get history",
+      "method": "GET",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "history": "array"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
